@@ -1,0 +1,50 @@
+# Script used to produce cost layers with low CV relative to species data 
+
+# Function for producing values with known correlation
+# Code from: https://stats.stackexchange.com/questions/15011/generate-a-random-variable-with-a-defined-correlation-to-an-existing-variable
+# (THE SECOND ANSWER)
+
+library(raster)
+library(scales)
+
+complement <- function(y, rho, x) {
+  if (missing(x)) x <- (rnorm(length(y), mean=2, sd=3))^2 # Optional: supply a default if `x` is not given
+  y.perp <- residuals(lm(x ~ y))
+  rho * sd(y.perp) * y + y.perp * sd(y) * sqrt(1 - rho^2)
+}
+
+
+# Original raster (that we want our new rasters to correlate with)
+r.pri <- raster("/home/student.unimelb.edu.au/anicholl/base_predict_mask.tif")
+
+# Create new set of values with known correlation to original values
+pri.v <- as.vector(na.omit(getValues(r.pri)))
+
+# Desired correlation
+rho   <- 0.9
+
+# apply complement function from above
+new.v <- complement(pri.v, rho)
+
+## changing the upper bound in the "to" argument will change the sd()/mean()
+new.v <- 10 ^ (rescale(new.v, to = c(1, 5)))
+
+# check coefficient of variation is high enough
+sd(new.v) / mean(new.v)
+
+# rescale correlative values between min and max of the original data
+# new.v <- rescale(new.v, to=c(min(pri.v), max(pri.v)))
+cor(pri.v, new.v) # check that correlation still = rho
+cor(pri.v, new.v, method = "spearman") # check that correlation still = rho
+
+# transfer the new values to a raster
+new.r <- r.pri
+new.r[!is.na(new.r)] <- new.v
+
+# plot the two rasters
+par(mfrow=c(1,2), mar=c(2,2,1,2))
+plot(r.pri)
+plot(new.r, main=paste0('correlation = ', round(cor(pri.v, new.v), 2)))
+
+# save the new raster
+writeRaster(new.r, "new_raster.tif", format='GTiff', overwrite=T)
