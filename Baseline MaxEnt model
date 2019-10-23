@@ -1,0 +1,97 @@
+# Data available on request if required
+# Script for baseline SDM 
+
+# load dismo and maptools
+library(dismo)
+library(maptools)
+
+# To find whether the maxent.jar file is in the correct place, do the following:
+jar <- paste(system.file(package="dismo"), "/java/maxent.jar", sep='')
+file.exists(jar)
+
+# read in environmental predictors then put them into one stack 
+vars <- c('2000Dry_sclerophyll_forests.asc', '2000Forested_Wetlands.asc', '2000Freshwater_Wetlands.asc',	'2000Grasslands.asc',	'2000Grassy_Woodlands.asc',	'2000Heathlands.asc',	'2000Rainforests.asc',	'2000Saline_Wetlands.asc',	'2000Wet_sclerophyll_forests.asc',	'altitude.asc',	'aspect.asc',	'cold_temp.asc',	'eastness.asc',	'fert.asc',	'final_vegetation.asc',	'hot_temp.asc',	'mean_rain.asc',	'mean_solar.asc',	'mean_temp.asc',	'native_vegetation.asc',	'northness.asc',	'rugg1000.asc',	'seasonal_rain.asc',	'slope.asc',	'soilmap.asc',	'terr1000.asc',	'wetness.asc',	'wii.asc')
+clim.stack.all <- stack(paste(getwd(),"/data/environment_data/unclipped/", vars, sep=""))
+
+
+# load in species data 
+point_data <- read.csv("data/Species_point_data_cleaned.csv", stringsAsFactors = F)
+
+
+# plot species data on a shapefile of greater hunter
+library(rgeos)
+library(rgdal)
+GDA94 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs") # original projection of the shapefile
+GDA94.56 <- CRS("+proj=utm +zone=56 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs") # new projection to which we want to project the shapefile
+
+gh.shape <- readShapeLines('data/borders/HCCREMS_AoI.shp', proj4=GDA94) # read in the GH shp, define its current projection
+gh.shape <- spTransform(gh.shape, GDA94.56) # reproject the shp to match point data
+
+P4S <- CRS("+proj=utm +zone=56 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs") # the right projection and datum for the map
+GH_bound<-readShapeLines("data/borders/HCCREMS_AoI.shp", verbose=TRUE, proj4string=P4S)
+plot(gh.shape, col="black", lwd=1.0, main="Greater Hunter")
+
+# load in background layers 
+bias <- c('sb_amphibians.asc', 'sb_birds.asc', 'sb_mammals.asc', 'sb_plants.asc', 'sb_reptiles.asc')
+bias_stack <- stack(paste(getwd(),"/data/bias_layers/", bias, sep="")) # load them in as a raster stack
+sp_bias <- read.csv('data/species_bias.csv')
+names(bias_stack)
+names(sp_bias)
+
+# model run
+library(rJava)
+library(raster)
+
+# read csv with species names
+sp_layers <- read.csv('data/species_layers.csv', stringsAsFactors = F) # don't read items in as factors
+names(sp_layers)
+
+all_sp_models <- vector("list",nrow(sp_layers)) # create a list for storing results ***use lists as a format for storing results
+pred.sp <- vector("list", nrow(sp_layers)) # create a list for storing predictions
+
+B <- 10000
+bckg.points <- as.data.frame(randomPoints(clim.stack.all, B)) # randomly select 10000 points from the extent of the predictor variables and make a dataframe
+species.preds <- extract(clim.stack.all,point_data[,2:3])  # extract predictor information at species point records
+bckg.preds <- extract(clim.stack.all,bckg.points)      # extract predictor information at the 10000 background points
+all.preds <- as.data.frame(rbind(species.preds,bckg.preds)) # combine this information as a single dataframe
+
+i <- 1
+
+for (i in 1:nrow(sp_layers)) { # for each item (species name) from 1 - number of rows (species) in the item sp_layers
+  cat(sp_layers$sp[i]) # print sp name to console as the model for each is completed
+  sp <- sp_layers$sp[i] # from the list of species in sp_layer, look in the column names 'sp' and take the next species 'i', then save this species as object 'sp'
+  presences <- as.data.frame(point_data[point_data$species==sp,2:3]) # go to point_data, and in that look at the column called species, if that species in the list == sp (the species the model is working on at the time), take the information from the 2nd and 3rd column (x,y coord), then save this as a dataframe to an object called presences
+  type.sp <- sp_layers$Taxa[i] # go to sp_layers, column called Taxa and assign the name of the taxa relating to sp[i] to a new object called type.sp
+  
+  relevant.pred <- sp_layers[i,3:30] # in sp_layers, take out the information in row of sp[i] and columns 3-30 (0s and 1s assigned to each environmnetal predictor for that species)
+  relevant.pred.index <- which(relevant.pred %in% 1) # makes an index of the predictors that has been assigned a 1
+  pred.stack <- clim.stack.all[[relevant.pred.index]] # go to clim.stack.all and take out the layers defined in the relevant.pred.index for sp[i] 
+  this.species.preds <- extract(pred.stack, presences) # extract predictor information from the relevant predictors at all the presence points for sp[i]
+  
+  relevant.bias <- sp_bias[i,3:6] # in sp_bias, take out the information in row of sp[i] and columns 3-6 (0s and 1s assigned to each environmnetal predictor for that species)
+  relevant.bias.index <- which(relevant.bias %in% 1) # makes an index of the predictors that has been assigned a 1
+  bias.stack <- bias_stack[[relevant.bias.index]] # go to bias_stack and take out the layers defined in the relevant.bias.index for sp[i] 
+  
+  sp.bckg.pred <- bckg.preds[,relevant.pred.index] # go to bckg.preds and subset the predictor info relevant to sp[i] defined by relevant.pred.index (take all rows and only columns (predictors) relevant to sp[i])
+  all.preds <- as.data.frame(rbind(this.species.preds, sp.bckg.pred)) # combine (by rows) this.species.preds and sp.bckg.pred as a dataframe, this then becomes the predictor info (=x)
+  id <- c(rep(1, nrow(presences)), rep(0,B)) # set up this vector for p= that contains a 1 for the number of rows of presence points and a 0 for the number of rows of background points. This tells the model that the first half of the dataset is presence points and the second half of the dataset (last 10,000 entries) are background points
+  
+  #run model
+  all_sp_models[[i]] <- maxent(x=all.preds, p=id, path=paste0('final_output/baseline/','baseline_',sp,'/'), args=c('-P', 'togglelayertype=final_vegetation', 'togglelayertype=soilmap'), 'biasfile=bias.stack') # the '-P' flag indicates we want maxent to create pictures of the response curves
+  
+  # toggle final veg and soil so they can be read as categorical not continuous
+  # should i add in jackknife analysis ?????
+  pred.sp <- predict(all_sp_models[[i]], pred.stack, filename= paste0('final_output/baseline/baseline_',sp, '/' ,sp, '_predict.tif')) # save the prediction to the folder the model is stored in 
+  
+  
+}
+
+
+# try to predict distribution for first species 
+#test.pred <- predict(all_sp_models[[i]],pred.stack)
+
+#plot(test.pred)
+
+presences <- sample_frac(presences, size = 0.5, replace = FALSE, weight = NULL)
+
+pred.sp <- predict(all_sp_models[[i]], pred.stack, filename= paste0('output/0.5_reduced/reduced_predictions/' ,sp, '_predict.tif')) # save the prediction to the folder the model is stored in  
