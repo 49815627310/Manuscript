@@ -80,10 +80,10 @@ for (i in 1:nrow(sp_layers)) { # for each item (species name) from 1 - number of
   id <- c(rep(1, nrow(presences)), rep(0,B)) # set up this vector for p= that contains a 1 for the number of rows of presence points and a 0 for the number of rows of background points. This tells the model that the first half of the dataset is presence points and the second half of the dataset (last 10,000 entries) are background points
   
   #run model
-  all_sp_models[[i]] <- maxent(x=all.preds, p=id, path=paste0('final_output/reduced_10/','reduced10_',sp,'/'), args=c('-P', 'togglelayertype=final_vegetation', 'togglelayertype=soilmap'), 'biasfile=bias.stack') # the '-P' flag indicates we want maxent to create pictures of the response curves
+  all_sp_models[[i]] <- maxent(x=all.preds, p=id, path=paste0('final_output/reduced_X/','reducedX_',sp,'/'), args=c('-P', 'togglelayertype=final_vegetation', 'togglelayertype=soilmap'), 'biasfile=bias.stack') # the '-P' flag indicates we want maxent to create pictures of the response curves
   
   # toggle final veg and soil so they can be read as categorical not continuous
-  pred.sp <- predict(all_sp_models[[i]], pred.stack, filename= paste0('final_output/reduced_10/reduced10_predictions/' ,sp, '_predict.tif')) # save the prediction to the folder the model is stored in  
+  pred.sp <- predict(all_sp_models[[i]], pred.stack, filename= paste0('final_output/reduced_X/reducedX_predictions/' ,sp, '_predict.tif')) # save the prediction to the folder the model is stored in  
   
   
 }
