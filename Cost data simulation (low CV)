@@ -15,7 +15,7 @@ complement <- function(y, rho, x) {
 
 
 # Original raster (that we want our new rasters to correlate with)
-r.pri <- raster("/home/student.unimelb.edu.au/anicholl/base_predict_mask.tif")
+r.pri <- raster("baseline_SDM_output.tif")
 
 # Create new set of values with known correlation to original values
 pri.v <- as.vector(na.omit(getValues(r.pri)))
